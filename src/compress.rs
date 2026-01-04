@@ -389,20 +389,24 @@ impl Compress {
 
     /// One scan for all components looks best. Other options may flash grayscale or green images.
     pub fn set_scan_optimization_mode(&mut self, mode: ScanMode) {
+        let smoothing_factor = self.cinfo.smoothing_factor;
         unsafe {
             ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_DC_SCAN_OPT_MODE, mode as c_int);
             ffi::jpeg_set_defaults(&mut self.cinfo);
         }
+        self.cinfo.smoothing_factor = smoothing_factor;
     }
 
     /// Reset to libjpeg v6 settings
     ///
     /// It gives files identical with libjpeg-turbo
     pub fn set_fastest_defaults(&mut self) {
+        let smoothing_factor = self.cinfo.smoothing_factor;
         unsafe {
             ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_COMPRESS_PROFILE, ffi::JINT_COMPRESS_PROFILE_VALUE::JCP_FASTEST as c_int);
             ffi::jpeg_set_defaults(&mut self.cinfo);
         }
+        self.cinfo.smoothing_factor = smoothing_factor;
     }
 
     /// Advanced. See `raw_data_in` in libjpeg docs.

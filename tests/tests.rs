@@ -167,3 +167,65 @@ fn decode_jpeg(buffer: &[u8]) -> (usize, usize, Vec<[u8; 3]>) {
 
     (width, height, image)
 }
+
+/// Test that smoothing_factor is preserved when calling set_scan_optimization_mode
+/// Regression test for https://github.com/ImageOptim/mozjpeg-rust/issues/45
+#[test]
+fn smoothing_factor_preserved() {
+    // Generate a dither-like pattern that benefits from smoothing
+    let size = 64;
+    let mut data = Vec::with_capacity(size * size * 3);
+    for y in 0..size {
+        for x in 0..size {
+            let v = if ((x / 2) + (y / 2)) % 2 == 0 { 80u8 } else { 176u8 };
+            data.push(v);
+            data.push(v);
+            data.push(v);
+        }
+    }
+
+    // Compress without smoothing
+    let size_no_smooth = {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        comp.set_size(size, size);
+        comp.set_quality(80.0);
+        comp.set_smoothing_factor(0);
+        comp.set_scan_optimization_mode(mozjpeg::ScanMode::Auto);
+        let mut comp = comp.start_compress(Vec::new()).unwrap();
+        comp.write_scanlines(&data).unwrap();
+        comp.finish().unwrap().len()
+    };
+
+    // Compress with smoothing set BEFORE set_scan_optimization_mode
+    let size_smooth_before = {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        comp.set_size(size, size);
+        comp.set_quality(80.0);
+        comp.set_smoothing_factor(50);
+        comp.set_scan_optimization_mode(mozjpeg::ScanMode::Auto);
+        let mut comp = comp.start_compress(Vec::new()).unwrap();
+        comp.write_scanlines(&data).unwrap();
+        comp.finish().unwrap().len()
+    };
+
+    // Compress with smoothing set AFTER set_scan_optimization_mode
+    let size_smooth_after = {
+        let mut comp = mozjpeg::Compress::new(mozjpeg::ColorSpace::JCS_RGB);
+        comp.set_size(size, size);
+        comp.set_quality(80.0);
+        comp.set_scan_optimization_mode(mozjpeg::ScanMode::Auto);
+        comp.set_smoothing_factor(50);
+        let mut comp = comp.start_compress(Vec::new()).unwrap();
+        comp.write_scanlines(&data).unwrap();
+        comp.finish().unwrap().len()
+    };
+
+    // Smoothing should reduce file size for high-frequency content
+    assert!(size_smooth_after < size_no_smooth,
+        "smoothing should reduce size: {} < {}", size_smooth_after, size_no_smooth);
+
+    // Both orderings should produce the same result (this was the bug)
+    assert_eq!(size_smooth_before, size_smooth_after,
+        "smoothing_factor should work regardless of call order: {} != {}",
+        size_smooth_before, size_smooth_after);
+}
