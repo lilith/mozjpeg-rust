@@ -154,6 +154,89 @@ fn encode_jpeg_with_icc_profile((width, height, data): (usize, usize, Vec<[u8; 3
     encoder.finish().unwrap()
 }
 
+// ============================================================================
+// force_8bit_quantization tests
+// ============================================================================
+
+#[test]
+fn force_8bit_false_matches_set_quality() {
+    // set_quality_force_8bit(q, false) must produce identical output to set_quality(q)
+    for &quality in &[10.0, 50.0, 85.0, 95.0] {
+        let size = 32;
+        let pixels = vec![128u8; size * size * 3];
+
+        // Legacy set_quality (hardcodes force_baseline=false)
+        let mut comp = Compress::new(ColorSpace::JCS_RGB);
+        comp.set_size(size, size);
+        comp.set_quality(quality);
+        let mut started = comp.start_compress(Vec::new()).unwrap();
+        started.write_scanlines(&pixels).unwrap();
+        let jpeg_legacy = started.finish().unwrap();
+
+        // New method with force_8bit=false
+        let mut comp = Compress::new(ColorSpace::JCS_RGB);
+        comp.set_size(size, size);
+        comp.set_quality_force_8bit(quality, false);
+        let mut started = comp.start_compress(Vec::new()).unwrap();
+        started.write_scanlines(&pixels).unwrap();
+        let jpeg_new = started.finish().unwrap();
+
+        assert_eq!(jpeg_legacy, jpeg_new,
+            "set_quality_force_8bit(q, false) should match set_quality(q) at quality {quality}");
+    }
+}
+
+#[test]
+fn force_8bit_true_clamps_at_low_quality() {
+    // At low quality, quantization values exceed 255. Clamping produces different output.
+    let size = 32;
+    let pixels = vec![128u8; size * size * 3];
+
+    let mut comp = Compress::new(ColorSpace::JCS_RGB);
+    comp.set_size(size, size);
+    comp.set_quality_force_8bit(10.0, false);
+    let mut started = comp.start_compress(Vec::new()).unwrap();
+    started.write_scanlines(&pixels).unwrap();
+    let jpeg_unclamped = started.finish().unwrap();
+
+    let mut comp = Compress::new(ColorSpace::JCS_RGB);
+    comp.set_size(size, size);
+    comp.set_quality_force_8bit(10.0, true);
+    let mut started = comp.start_compress(Vec::new()).unwrap();
+    started.write_scanlines(&pixels).unwrap();
+    let jpeg_clamped = started.finish().unwrap();
+
+    assert_ne!(jpeg_unclamped, jpeg_clamped,
+        "force_8bit at quality 10 should produce different output (16-bit vs 8-bit DQT)");
+    // Clamped version is slightly smaller (8-bit DQT markers vs 16-bit)
+    assert!(jpeg_clamped.len() < jpeg_unclamped.len(),
+        "8-bit DQT should be smaller than 16-bit DQT");
+}
+
+#[test]
+fn force_8bit_no_effect_at_high_quality() {
+    // At high quality, all quantization values are <= 255 anyway.
+    let size = 32;
+    let pixels = vec![128u8; size * size * 3];
+
+    let mut comp = Compress::new(ColorSpace::JCS_RGB);
+    comp.set_size(size, size);
+    comp.set_quality_force_8bit(85.0, false);
+    let mut started = comp.start_compress(Vec::new()).unwrap();
+    started.write_scanlines(&pixels).unwrap();
+    let jpeg_unclamped = started.finish().unwrap();
+
+    let mut comp = Compress::new(ColorSpace::JCS_RGB);
+    comp.set_size(size, size);
+    comp.set_quality_force_8bit(85.0, true);
+    let mut started = comp.start_compress(Vec::new()).unwrap();
+    started.write_scanlines(&pixels).unwrap();
+    let jpeg_clamped = started.finish().unwrap();
+
+    assert_eq!(jpeg_unclamped, jpeg_clamped,
+        "force_8bit should have no effect at quality 85 (all values already <= 255)");
+}
+
 fn decode_jpeg(buffer: &[u8]) -> (usize, usize, Vec<[u8; 3]>) {
     let mut decoder = match mozjpeg::Decompress::new_mem(buffer).unwrap().image().unwrap() {
         mozjpeg::decompress::Format::RGB(d) => d,
