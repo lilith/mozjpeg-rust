@@ -256,14 +256,56 @@ impl<W> CompressStarted<W> {
             return Err(io::ErrorKind::InvalidInput.into());
         }
 
-        let byte_width = self.compress.cinfo.image_width as usize
-            * self.compress.cinfo.input_components as usize;
-        for rows in image_src.chunks(MAX_MCU_HEIGHT * byte_width) {
+        let byte_width = self.compress.cinfo.image_width as usize * self.compress.cinfo.input_components as usize;
+        self.write_scanlines_strided(image_src, byte_width)
+    }
+
+    /// Write scanlines with custom stride (bytes per row)
+    ///
+    /// Use this when your pixel data has padding/alignment between rows.
+    /// `stride` is the number of bytes from the start of one row to the start of the next.
+    ///
+    /// For tightly-packed data (no padding), use `write_scanlines()` instead.
+    ///
+    /// ## Panics
+    ///
+    /// It may panic, like all functions of this library.
+    pub fn write_scanlines_strided(&mut self, image_src: &[u8], stride: usize) -> io::Result<()> {
+        if self.compress.cinfo.raw_data_in != 0 ||
+            self.compress.cinfo.input_components <= 0 ||
+            self.compress.cinfo.image_width == 0 {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+
+        let byte_width = self.compress.cinfo.image_width as usize * self.compress.cinfo.input_components as usize;
+
+        // Validate stride
+        if stride < byte_width {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("stride ({}) must be >= byte_width ({})", stride, byte_width)
+            ));
+        }
+
+        // Process rows in chunks of MAX_MCU_HEIGHT
+        let mut offset = 0;
+        while offset < image_src.len() {
             let mut row_pointers = ArrayVec::<_, MAX_MCU_HEIGHT>::new();
-            for row in rows.chunks_exact(byte_width) {
-                row_pointers.push(row.as_ptr());
+
+            // Collect up to MAX_MCU_HEIGHT row pointers
+            for _ in 0..MAX_MCU_HEIGHT {
+                if offset + byte_width > image_src.len() {
+                    break;
+                }
+                row_pointers.push(image_src[offset..].as_ptr());
+                offset += stride;
             }
 
+            if row_pointers.is_empty() {
+                break;
+            }
+
+            // Write the rows
             let mut rows_left = row_pointers.len() as u32;
             let mut row_pointers = row_pointers.as_ptr();
             while rows_left > 0 {
