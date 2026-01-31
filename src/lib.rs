@@ -41,6 +41,8 @@ mod marker;
 /// Quantization table presets from MozJPEG
 pub mod qtable;
 mod readsrc;
+/// Configuration validation and tracking to detect ordering bugs
+pub mod validation;
 mod writedst;
 
 #[test]
@@ -53,9 +55,16 @@ fn recompress() {
 
     assert_eq!(1.0, dinfo.gamma());
     assert_eq!(ColorSpace::JCS_YCbCr, dinfo.color_space());
-    assert_eq!(dinfo.components().len(), dinfo.color_space().num_components());
+    assert_eq!(
+        dinfo.components().len(),
+        dinfo.color_space().num_components()
+    );
 
-    let samp_factors = dinfo.components().iter().map(|c| c.v_samp_factor).collect::<Vec<_>>();
+    let samp_factors = dinfo
+        .components()
+        .iter()
+        .map(|c| c.v_samp_factor)
+        .collect::<Vec<_>>();
 
     assert_eq!((45, 30), dinfo.size());
 
@@ -66,12 +75,17 @@ fn recompress() {
 
     dinfo.finish().unwrap();
 
-    fn write_jpeg(bitmaps: &[&mut Vec<u8>; 3], samp_factors: &Vec<i32>, scale: (f32, f32)) -> Vec<u8> {
+    fn write_jpeg(
+        bitmaps: &[&mut Vec<u8>; 3],
+        samp_factors: &Vec<i32>,
+        scale: (f32, f32),
+    ) -> Vec<u8> {
         let mut cinfo = Compress::new(ColorSpace::JCS_YCbCr);
 
         cinfo.set_size(45, 30);
 
-        #[allow(deprecated)] {
+        #[allow(deprecated)]
+        {
             cinfo.set_gamma(1.0);
         }
 
@@ -99,8 +113,14 @@ fn recompress() {
     let data2 = &write_jpeg(&bitmaps, &samp_factors, (0.5, 0.5));
     let data2_len = data2.len();
 
-    File::create("testout-r1.jpg").unwrap().write_all(data1).unwrap();
-    File::create("testout-r2.jpg").unwrap().write_all(data2).unwrap();
+    File::create("testout-r1.jpg")
+        .unwrap()
+        .write_all(data1)
+        .unwrap();
+    File::create("testout-r2.jpg")
+        .unwrap()
+        .write_all(data2)
+        .unwrap();
 
     assert!(data1_len > data2_len);
 }

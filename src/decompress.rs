@@ -1,6 +1,4 @@
 //! See the `Decompress` struct instead. You don't need to use this module directly.
-use bytemuck::Pod;
-use crate::{colorspace::ColorSpace, PixelDensity};
 use crate::colorspace::ColorSpaceExt;
 use crate::component::CompInfo;
 use crate::component::CompInfoExt;
@@ -13,6 +11,8 @@ use crate::ffi::JPEG_LIB_VERSION;
 use crate::ffi::J_COLOR_SPACE as COLOR_SPACE;
 use crate::marker::Marker;
 use crate::readsrc::SourceMgr;
+use crate::{colorspace::ColorSpace, PixelDensity};
+use bytemuck::Pod;
 use libc::fdopen;
 use std::cmp::min;
 use std::fs::File;
@@ -43,9 +43,21 @@ pub const NO_MARKERS: &[Marker] = &[];
 /// Decompress::with_markers(ALL_MARKERS);
 /// ```
 pub const ALL_MARKERS: &[Marker] = &[
-    Marker::APP(0), Marker::APP(1), Marker::APP(2), Marker::APP(3), Marker::APP(4),
-    Marker::APP(5), Marker::APP(6), Marker::APP(7), Marker::APP(8), Marker::APP(9),
-    Marker::APP(10), Marker::APP(11), Marker::APP(12), Marker::APP(13), Marker::APP(14),
+    Marker::APP(0),
+    Marker::APP(1),
+    Marker::APP(2),
+    Marker::APP(3),
+    Marker::APP(4),
+    Marker::APP(5),
+    Marker::APP(6),
+    Marker::APP(7),
+    Marker::APP(8),
+    Marker::APP(9),
+    Marker::APP(10),
+    Marker::APP(11),
+    Marker::APP(12),
+    Marker::APP(13),
+    Marker::APP(14),
     Marker::COM,
 ];
 
@@ -230,11 +242,17 @@ impl<'mem> Decompress<&'mem [u8]> {
 impl<R> Decompress<R> {
     /// Decode from an `io::BufRead`, which is `BufReader` wrapping any `io::Read`.
     #[inline]
-    pub fn new_reader(reader: R) -> io::Result<Self> where R: BufRead {
+    pub fn new_reader(reader: R) -> io::Result<Self>
+    where
+        R: BufRead,
+    {
         DecompressBuilder::new().from_reader(reader)
     }
 
-    fn from_builder_and_reader(builder: DecompressBuilder<'_>, reader: R) -> io::Result<Self> where R: BufRead {
+    fn from_builder_and_reader(builder: DecompressBuilder<'_>, reader: R) -> io::Result<Self>
+    where
+        R: BufRead,
+    {
         let src_mgr = Box::new(SourceMgr::new(reader)?);
         let err_mgr = builder.err_mgr.unwrap_or_else(unwinding_error_mgr);
         unsafe {
@@ -261,9 +279,7 @@ impl<R> Decompress<R> {
         if self.cinfo.comp_info.is_null() {
             return &[];
         }
-        unsafe {
-            slice::from_raw_parts(self.cinfo.comp_info, self.cinfo.num_components as usize)
-        }
+        unsafe { slice::from_raw_parts(self.cinfo.comp_info, self.cinfo.num_components as usize) }
     }
 
     #[inline]
@@ -284,7 +300,10 @@ impl<R> Decompress<R> {
         if res == 1 {
             Ok(())
         } else {
-            Err(io::Error::new(io::ErrorKind::Other, "no image in the JPEG file"))
+            Err(io::Error::new(
+                io::ErrorKind::Other,
+                "no image in the JPEG file",
+            ))
         }
     }
 
@@ -431,7 +450,10 @@ impl<R> Decompress<R> {
     #[track_caller]
     #[inline]
     pub fn scale(&mut self, numerator: u8) {
-        assert!(1 <= numerator && numerator <= 16, "numerator must be between 1 and 16");
+        assert!(
+            1 <= numerator && numerator <= 16,
+            "numerator must be between 1 and 16"
+        );
         self.cinfo.scale_num = numerator.into();
         self.cinfo.scale_denom = 8;
     }
@@ -500,7 +522,13 @@ impl<R> DecompressStarted<R> {
         unsafe {
             let mut row_ptrs = [[ptr::null_mut::<ffi::JSAMPLE>(); MAX_MCU_HEIGHT]; MAX_COMPONENTS];
             let mut comp_ptrs = [ptr::null_mut::<*mut ffi::JSAMPLE>(); MAX_COMPONENTS];
-            for ((comp_info, comp_dest), (comp_ptrs, row_ptrs)) in self.dec.components().iter().zip(&mut *image_dest).zip(comp_ptrs.iter_mut().zip(row_ptrs.iter_mut())) {
+            for ((comp_info, comp_dest), (comp_ptrs, row_ptrs)) in self
+                .dec
+                .components()
+                .iter()
+                .zip(&mut *image_dest)
+                .zip(comp_ptrs.iter_mut().zip(row_ptrs.iter_mut()))
+            {
                 let row_stride = comp_info.row_stride();
 
                 let comp_height = comp_info.v_samp_factor as usize * DCTSIZE;
@@ -509,13 +537,21 @@ impl<R> DecompressStarted<R> {
                 let comp_dest = &mut comp_dest.spare_capacity_mut()[..required_len];
 
                 // row_ptrs were initialized to null
-                for (row_ptr, comp_dest) in row_ptrs.iter_mut().zip(comp_dest.chunks_exact_mut(row_stride)).take(comp_height) {
+                for (row_ptr, comp_dest) in row_ptrs
+                    .iter_mut()
+                    .zip(comp_dest.chunks_exact_mut(row_stride))
+                    .take(comp_height)
+                {
                     *row_ptr = comp_dest.as_mut_ptr().cast();
                 }
                 *comp_ptrs = row_ptrs.as_mut_ptr();
             }
 
-            let lines_read = ffi::jpeg_read_raw_data(&mut self.dec.cinfo, comp_ptrs.as_mut_ptr(), mcu_height as u32) as usize;
+            let lines_read = ffi::jpeg_read_raw_data(
+                &mut self.dec.cinfo,
+                comp_ptrs.as_mut_ptr(),
+                mcu_height as u32,
+            ) as usize;
 
             assert_eq!(lines_read, mcu_height); // Partial reads would make subsampled height tricky to define
 
@@ -550,17 +586,26 @@ impl<R> DecompressStarted<R> {
         if num_components != mem::size_of::<T>() && mem::size_of::<T>() != 1 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                format!("pixel size must have {num_components} bytes, but has {}", mem::size_of::<T>()),
+                format!(
+                    "pixel size must have {num_components} bytes, but has {}",
+                    mem::size_of::<T>()
+                ),
             ));
         }
         let width = self.width();
         let height = self.height();
         let mut image_dst: Vec<T> = Vec::new();
         let required_len = height * width * (num_components / mem::size_of::<T>());
-        image_dst.try_reserve_exact(required_len).map_err(|_| io::ErrorKind::OutOfMemory)?;
-        let read_len = self.read_scanlines_into_uninit(&mut image_dst.spare_capacity_mut()[..required_len])?.len();
+        image_dst
+            .try_reserve_exact(required_len)
+            .map_err(|_| io::ErrorKind::OutOfMemory)?;
+        let read_len = self
+            .read_scanlines_into_uninit(&mut image_dst.spare_capacity_mut()[..required_len])?
+            .len();
         if read_len <= required_len {
-            unsafe { image_dst.set_len(read_len); }
+            unsafe {
+                image_dst.set_len(read_len);
+            }
         }
         Ok(image_dst)
     }
@@ -569,15 +614,20 @@ impl<R> DecompressStarted<R> {
     /// `[u8; 3]` and `rgb::RGB8` are fine, for example. `[u8]` is allowed for any pixel type.
     ///
     /// Allocation-less version of `read_scanlines`
-    pub fn read_scanlines_into<'dest, T: Pod>(&mut self, dest: &'dest mut [T]) -> io::Result<&'dest mut [T]> {
-        let dest_uninit = unsafe {
-            std::mem::transmute::<&'dest mut [T], &'dest mut [MaybeUninit<T>]>(dest)
-        };
+    pub fn read_scanlines_into<'dest, T: Pod>(
+        &mut self,
+        dest: &'dest mut [T],
+    ) -> io::Result<&'dest mut [T]> {
+        let dest_uninit =
+            unsafe { std::mem::transmute::<&'dest mut [T], &'dest mut [MaybeUninit<T>]>(dest) };
         self.read_scanlines_into_uninit(dest_uninit)
     }
 
     /// Returns written-to slice
-    pub fn read_scanlines_into_uninit<'dest, T: Pod>(&mut self, dest: &'dest mut [MaybeUninit<T>]) -> io::Result<&'dest mut [T]> {
+    pub fn read_scanlines_into_uninit<'dest, T: Pod>(
+        &mut self,
+        dest: &'dest mut [MaybeUninit<T>],
+    ) -> io::Result<&'dest mut [T]> {
         let num_components = self.color_space().num_components();
         let item_size = if mem::size_of::<T>() == 1 {
             num_components
@@ -586,7 +636,10 @@ impl<R> DecompressStarted<R> {
         } else {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                format!("pixel size must have {num_components} bytes, but has {}", mem::size_of::<T>()),
+                format!(
+                    "pixel size must have {num_components} bytes, but has {}",
+                    mem::size_of::<T>()
+                ),
             ));
         };
         let width = self.width();
@@ -607,15 +660,19 @@ impl<R> DecompressStarted<R> {
             let rows = std::ptr::addr_of_mut!(row_ptr);
             unsafe {
                 let rows_read = ffi::jpeg_read_scanlines(&mut self.dec.cinfo, rows, 1) as usize;
-                debug_assert_eq!(start_line + rows_read, self.dec.cinfo.output_scanline as usize, "{start_line}+{rows_read} != {} of {height}", self.dec.cinfo.output_scanline);
+                debug_assert_eq!(
+                    start_line + rows_read,
+                    self.dec.cinfo.output_scanline as usize,
+                    "{start_line}+{rows_read} != {} of {height}",
+                    self.dec.cinfo.output_scanline
+                );
                 if 0 == rows_read {
                     return Err(io::ErrorKind::UnexpectedEof.into());
                 }
             }
         }
-        let dest_init = unsafe {
-            std::mem::transmute::<&'dest mut [MaybeUninit<T>], &'dest mut [T]>(dest)
-        };
+        let dest_init =
+            unsafe { std::mem::transmute::<&'dest mut [MaybeUninit<T>], &'dest mut [T]>(dest) };
         Ok(dest_init)
     }
 
@@ -627,7 +684,10 @@ impl<R> DecompressStarted<R> {
 
     #[deprecated(note = "use read_scanlines_into::<u8>")]
     #[doc(hidden)]
-    pub fn read_scanlines_flat_into<'dest>(&mut self, dest: &'dest mut [u8]) -> io::Result<&'dest mut [u8]> {
+    pub fn read_scanlines_flat_into<'dest>(
+        &mut self,
+        dest: &'dest mut [u8],
+    ) -> io::Result<&'dest mut [u8]> {
         self.read_scanlines_into(dest)
     }
 
@@ -650,7 +710,10 @@ impl<R> DecompressStarted<R> {
     }
 
     /// Finish decompress and return the reader
-    pub fn finish_into_inner(mut self) -> io::Result<R> where R: BufRead {
+    pub fn finish_into_inner(mut self) -> io::Result<R>
+    where
+        R: BufRead,
+    {
         self.finish_internal()?;
         self.dec.cinfo.src = ptr::null_mut();
         let mgr = self.dec.src_mgr.take().ok_or(io::ErrorKind::Other)?;
@@ -695,7 +758,15 @@ fn read_incomplete_file() {
     assert_eq!(2169, data.len());
 
     // the reader fakes EOI marker, so it always succeeds!
-    for l in [data.len()/2, data.len()/3, data.len()/4, data.len()-4, data.len()-3, data.len()-2, data.len()-1] {
+    for l in [
+        data.len() / 2,
+        data.len() / 3,
+        data.len() / 4,
+        data.len() - 4,
+        data.len() - 3,
+        data.len() - 2,
+        data.len() - 1,
+    ] {
         let dinfo = Decompress::new_mem(&data[..l]).unwrap();
         let mut dinfo = dinfo.rgb().unwrap();
         let _bitmap: Vec<[u8; 3]> = dinfo.read_scanlines().unwrap();
@@ -769,7 +840,10 @@ fn read_file() {
 
     assert_eq!(1.0, dinfo.gamma());
     assert_eq!(ColorSpace::JCS_YCbCr, dinfo.color_space());
-    assert_eq!(dinfo.components().len(), dinfo.color_space().num_components() as usize);
+    assert_eq!(
+        dinfo.components().len(),
+        dinfo.color_space().num_components() as usize
+    );
 
     assert_eq!((45, 30), dinfo.size());
     {
@@ -823,7 +897,10 @@ fn no_markers() {
     let res = dinfo.rgb().unwrap().read_scanlines::<[u8; 3]>().unwrap();
     assert_eq!(res.len(), 45 * 30);
 
-    let dinfo = Decompress::builder().with_markers(&[]).from_path("tests/test.jpg").unwrap();
+    let dinfo = Decompress::builder()
+        .with_markers(&[])
+        .from_path("tests/test.jpg")
+        .unwrap();
     assert_eq!(0, dinfo.markers().count());
 }
 
@@ -835,7 +912,10 @@ fn buffer_into_inner() {
     let orig_data_len = data.len();
 
     let dec = Decompress::builder()
-        .from_reader(BufReader::with_capacity(data.len()/17, std::io::Cursor::new(data)))
+        .from_reader(BufReader::with_capacity(
+            data.len() / 17,
+            std::io::Cursor::new(data),
+        ))
         .unwrap();
     let mut dec = dec.rgb().unwrap();
     let _: Vec<[u8; 3]> = dec.read_scanlines().unwrap();
@@ -852,7 +932,10 @@ fn buffer_into_inner() {
 
     // read one image
     let dec = Decompress::builder()
-        .from_reader(BufReader::with_capacity(data.len()/21, std::io::Cursor::new(data)))
+        .from_reader(BufReader::with_capacity(
+            data.len() / 21,
+            std::io::Cursor::new(data),
+        ))
         .unwrap();
     let mut dec = dec.rgb().unwrap();
     let _: Vec<[u8; 3]> = dec.read_scanlines().unwrap();
@@ -873,7 +956,10 @@ fn read_file_rgb() {
     use std::io::Read;
 
     let data = std::fs::read("tests/test.jpg").unwrap();
-    let dinfo = Decompress::builder().with_markers(ALL_MARKERS).from_mem(&data[..]).unwrap();
+    let dinfo = Decompress::builder()
+        .with_markers(ALL_MARKERS)
+        .from_mem(&data[..])
+        .unwrap();
 
     assert_eq!(ColorSpace::JCS_YCbCr, dinfo.color_space());
 
@@ -881,7 +967,10 @@ fn read_file_rgb() {
 
     let mut dinfo = dinfo.rgb().unwrap();
     assert_eq!(ColorSpace::JCS_RGB, dinfo.color_space());
-    assert_eq!(dinfo.components().len(), dinfo.color_space().num_components() as usize);
+    assert_eq!(
+        dinfo.components().len(),
+        dinfo.color_space().num_components() as usize
+    );
 
     let bitmap: Vec<[u8; 3]> = dinfo.read_scanlines().unwrap();
     assert_eq!(bitmap.len(), 45 * 30);
@@ -894,7 +983,10 @@ fn read_file_rgb() {
 #[test]
 fn drops_reader() {
     #[repr(align(1024))]
-    struct CountsDrops<'a, R> {drop_count: &'a mut u8, reader: R}
+    struct CountsDrops<'a, R> {
+        drop_count: &'a mut u8,
+        reader: R,
+    }
 
     impl<R> Drop for CountsDrops<'_, R> {
         fn drop(&mut self) {
@@ -908,10 +1000,12 @@ fn drops_reader() {
         }
     }
     let mut drop_count = 0;
-    let r = Decompress::builder().from_reader(BufReader::new(CountsDrops {
-        drop_count: &mut drop_count,
-        reader: File::open("tests/test.jpg").unwrap(),
-    })).unwrap();
+    let r = Decompress::builder()
+        .from_reader(BufReader::new(CountsDrops {
+            drop_count: &mut drop_count,
+            reader: File::open("tests/test.jpg").unwrap(),
+        }))
+        .unwrap();
     drop(r);
     assert_eq!(1, drop_count);
 }

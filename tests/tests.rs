@@ -3,9 +3,11 @@ use mozjpeg::*;
 pub fn decompress_jpeg(jpeg: &[u8]) -> Vec<Vec<u8>> {
     let decomp = mozjpeg::Decompress::new_mem(jpeg).unwrap();
 
-    let mut bitmaps:Vec<_> = decomp.components().iter().map(|c|{
-        Vec::with_capacity(c.row_stride() * c.col_stride())
-    }).collect();
+    let mut bitmaps: Vec<_> = decomp
+        .components()
+        .iter()
+        .map(|c| Vec::with_capacity(c.row_stride() * c.col_stride()))
+        .collect();
 
     let mut decomp = decomp.raw().unwrap();
     {
@@ -155,7 +157,11 @@ fn encode_jpeg_with_icc_profile((width, height, data): (usize, usize, Vec<[u8; 3
 }
 
 fn decode_jpeg(buffer: &[u8]) -> (usize, usize, Vec<[u8; 3]>) {
-    let mut decoder = match mozjpeg::Decompress::new_mem(buffer).unwrap().image().unwrap() {
+    let mut decoder = match mozjpeg::Decompress::new_mem(buffer)
+        .unwrap()
+        .image()
+        .unwrap()
+    {
         mozjpeg::decompress::Format::RGB(d) => d,
         _ => unimplemented!(),
     };
@@ -177,7 +183,11 @@ fn smoothing_factor_preserved() {
     let mut data = Vec::with_capacity(size * size * 3);
     for y in 0..size {
         for x in 0..size {
-            let v = if ((x / 2) + (y / 2)) % 2 == 0 { 80u8 } else { 176u8 };
+            let v = if ((x / 2) + (y / 2)) % 2 == 0 {
+                80u8
+            } else {
+                176u8
+            };
             data.push(v);
             data.push(v);
             data.push(v);
@@ -221,11 +231,17 @@ fn smoothing_factor_preserved() {
     };
 
     // Smoothing should reduce file size for high-frequency content
-    assert!(size_smooth_after < size_no_smooth,
-        "smoothing should reduce size: {} < {}", size_smooth_after, size_no_smooth);
+    assert!(
+        size_smooth_after < size_no_smooth,
+        "smoothing should reduce size: {} < {}",
+        size_smooth_after,
+        size_no_smooth
+    );
 
     // Both orderings should produce the same result (this was the bug)
-    assert_eq!(size_smooth_before, size_smooth_after,
+    assert_eq!(
+        size_smooth_before, size_smooth_after,
         "smoothing_factor should work regardless of call order: {} != {}",
-        size_smooth_before, size_smooth_after);
+        size_smooth_before, size_smooth_after
+    );
 }

@@ -61,7 +61,8 @@ impl<R: BufRead> SourceMgr<R> {
     /// at an end of a marker, or `jpeg_consume_input` has been called.
     pub fn into_inner(mut self) -> R {
         unsafe {
-            let mut inner = Box::from_raw(std::mem::replace(&mut self.inner_shared, ptr::null_mut()));
+            let mut inner =
+                Box::from_raw(std::mem::replace(&mut self.inner_shared, ptr::null_mut()));
             inner.get_mut().return_unconsumed_data();
 
             #[cfg(debug_assertions)]
@@ -75,9 +76,7 @@ impl<R: BufRead> SourceMgr<R> {
     /// or otherwise guaranteed not to be used any more via libjpeg.
     pub unsafe fn iface_c_ptr(&mut self) -> *mut jpeg_source_mgr {
         debug_assert!(!self.inner_shared.is_null());
-        unsafe {
-            ptr::addr_of_mut!((*UnsafeCell::raw_get(self.inner_shared)).iface)
-        }
+        unsafe { ptr::addr_of_mut!((*UnsafeCell::raw_get(self.inner_shared)).iface) }
     }
 }
 
@@ -89,7 +88,9 @@ impl<R> Drop for SourceMgr<R> {
                 let _ = Box::from_raw(self.inner_shared);
 
                 #[cfg(debug_assertions)]
-                Box::from_raw(self.inner_shared).get_mut().poison_jpeg_source_mgr();
+                Box::from_raw(self.inner_shared)
+                    .get_mut()
+                    .poison_jpeg_source_mgr();
             }
         }
     }
@@ -103,23 +104,28 @@ impl<R> SourceMgrInner<R> {
             panic!("cinfo.src dangling");
         }
         extern "C-unwind" fn crash_i(cinfo: &mut jpeg_decompress_struct) -> boolean {
-            crash(cinfo); 0
+            crash(cinfo);
+            0
         }
         extern "C-unwind" fn crash_s(cinfo: &mut jpeg_decompress_struct, _: c_long) {
             crash(cinfo);
         }
         extern "C-unwind" fn crash_r(cinfo: &mut jpeg_decompress_struct, _: c_int) -> boolean {
-            crash(cinfo); 0
+            crash(cinfo);
+            0
         }
-        ptr::write_volatile(&mut self.iface, jpeg_source_mgr {
-            next_input_byte: ptr::NonNull::dangling().as_ptr(),
-            bytes_in_buffer: !0,
-            init_source: Some(crash),
-            fill_input_buffer: Some(crash_i),
-            skip_input_data: Some(crash_s),
-            resync_to_restart: Some(crash_r),
-            term_source: Some(crash),
-        });
+        ptr::write_volatile(
+            &mut self.iface,
+            jpeg_source_mgr {
+                next_input_byte: ptr::NonNull::dangling().as_ptr(),
+                bytes_in_buffer: !0,
+                init_source: Some(crash),
+                fill_input_buffer: Some(crash_i),
+                skip_input_data: Some(crash_s),
+                resync_to_restart: Some(crash_r),
+                term_source: Some(crash),
+            },
+        );
     }
 }
 
@@ -134,7 +140,8 @@ impl<R: BufRead> SourceMgrInner<R> {
             type FnPtr<'a> = unsafe extern "C-unwind" fn(cinfo: &'a mut jpeg_decompress_struct);
             // This is a redundant safety check to ensure the struct is ours
             #[allow(unknown_lints)]
-            #[allow(unpredictable_function_pointer_comparisons)] // it's the same pointer from the same unit
+            #[allow(unpredictable_function_pointer_comparisons)]
+            // it's the same pointer from the same unit
             if Some::<FnPtr>(Self::init_source) == (*this).iface.init_source {
                 return &mut *this;
             }
@@ -194,16 +201,19 @@ impl<R: BufRead> SourceMgrInner<R> {
                 warn(&mut cinfo.common, JWRN_JPEG_EOF);
                 // boolean returned by this function is for async I/O, not errors.
                 1
-            },
+            }
             Err(_) => {
                 fail(&mut cinfo.common, JERR_FILE_READ);
-            },
+            }
         }
     }
 
     /// libjpeg makes `bytes_in_buffer` up to date before calling this
     #[inline(never)]
-    unsafe extern "C-unwind" fn skip_input_data(cinfo: &mut jpeg_decompress_struct, num_bytes: c_long) {
+    unsafe extern "C-unwind" fn skip_input_data(
+        cinfo: &mut jpeg_decompress_struct,
+        num_bytes: c_long,
+    ) {
         if num_bytes <= 0 {
             return;
         }
