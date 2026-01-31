@@ -43,6 +43,11 @@ pub mod qtable;
 mod readsrc;
 mod writedst;
 
+/// Type-safe JPEG encoding API where invalid configurations are unrepresentable
+///
+/// Alternative names: `exact`, `exacting_api`, `v2`, `strict`, `safe`
+pub mod typed;
+
 #[test]
 fn recompress() {
     use crate::colorspace::{ColorSpace, ColorSpaceExt};

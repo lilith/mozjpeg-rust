@@ -43,7 +43,7 @@ pub struct Compress {
     _it_is_self_referential: PhantomPinned,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum ScanMode {
     AllComponentsTogether = 0,
     /// Can flash grayscale or green-tinted images
@@ -224,12 +224,55 @@ impl<W> CompressStarted<W> {
         }
 
         let byte_width = self.compress.cinfo.image_width as usize * self.compress.cinfo.input_components as usize;
-        for rows in image_src.chunks(MAX_MCU_HEIGHT * byte_width) {
+        self.write_scanlines_strided(image_src, byte_width)
+    }
+
+    /// Write scanlines with custom stride (bytes per row)
+    ///
+    /// Use this when your pixel data has padding/alignment between rows.
+    /// `stride` is the number of bytes from the start of one row to the start of the next.
+    ///
+    /// For tightly-packed data (no padding), use `write_scanlines()` instead.
+    ///
+    /// ## Panics
+    ///
+    /// It may panic, like all functions of this library.
+    pub fn write_scanlines_strided(&mut self, image_src: &[u8], stride: usize) -> io::Result<()> {
+        if self.compress.cinfo.raw_data_in != 0 ||
+            self.compress.cinfo.input_components <= 0 ||
+            self.compress.cinfo.image_width == 0 {
+            return Err(io::ErrorKind::InvalidInput.into());
+        }
+
+        let byte_width = self.compress.cinfo.image_width as usize * self.compress.cinfo.input_components as usize;
+
+        // Validate stride
+        if stride < byte_width {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("stride ({}) must be >= byte_width ({})", stride, byte_width)
+            ));
+        }
+
+        // Process rows in chunks of MAX_MCU_HEIGHT
+        let mut offset = 0;
+        while offset < image_src.len() {
             let mut row_pointers = ArrayVec::<_, MAX_MCU_HEIGHT>::new();
-            for row in rows.chunks_exact(byte_width) {
-                row_pointers.push(row.as_ptr());
+
+            // Collect up to MAX_MCU_HEIGHT row pointers
+            for _ in 0..MAX_MCU_HEIGHT {
+                if offset + byte_width > image_src.len() {
+                    break;
+                }
+                row_pointers.push(image_src[offset..].as_ptr());
+                offset += stride;
             }
 
+            if row_pointers.is_empty() {
+                break;
+            }
+
+            // Write the rows
             let mut rows_left = row_pointers.len() as u32;
             let mut row_pointers = row_pointers.as_ptr();
             while rows_left > 0 {
@@ -411,23 +454,79 @@ impl Compress {
     }
 
     /// Set image quality. Values 60-80 are recommended.
+    ///
+    /// Quantization table values are not clamped to the 8-bit range, so at low
+    /// quality settings (below ~50) some values may exceed 255 and produce
+    /// 16-bit DQT markers.
+    ///
+    /// Use [`set_quality_force_8bit`](Self::set_quality_force_8bit) to control
+    /// whether values are clamped to 1-255.
     pub fn set_quality(&mut self, quality: f32) {
         unsafe {
             ffi::jpeg_set_quality(&mut self.cinfo, quality as c_int, boolean::from(false));
         }
     }
 
+    /// Set image quality with control over 8-bit quantization table clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, quantization table values are
+    /// clamped to 1-255 (8-bit DQT precision). When `false`, values can go up to
+    /// 32767 (16-bit DQT precision).
+    ///
+    /// This only affects quantization table value range. It does NOT disable
+    /// progressive encoding, change the SOF marker type, or affect any other
+    /// encoding parameters.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_set_quality()`.
+    pub fn set_quality_force_8bit(&mut self, quality: f32, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_set_quality(&mut self.cinfo, quality as c_int, boolean::from(force_8bit_quantization));
+        }
+    }
+
     /// Instead of quality setting, use a specific quantization table.
+    ///
+    /// Table values are clamped to 1-255 (8-bit DQT precision).
+    /// Use [`set_luma_qtable_force_8bit`](Self::set_luma_qtable_force_8bit) for explicit control.
     pub fn set_luma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 0, qtable.as_ptr(), 100, 1);
         }
     }
 
+    /// Instead of quality setting, use a specific quantization table with
+    /// control over 8-bit clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, table values are clamped to 1-255.
+    /// When `false`, values can go up to 32767.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_add_quant_table()`.
+    pub fn set_luma_qtable_force_8bit(&mut self, qtable: &QTable, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_add_quant_table(&mut self.cinfo, 0, qtable.as_ptr(), 100, boolean::from(force_8bit_quantization) as c_int);
+        }
+    }
+
     /// Instead of quality setting, use a specific quantization table for color.
+    ///
+    /// Table values are clamped to 1-255 (8-bit DQT precision).
+    /// Use [`set_chroma_qtable_force_8bit`](Self::set_chroma_qtable_force_8bit) for explicit control.
     pub fn set_chroma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 1, qtable.as_ptr(), 100, 1);
+        }
+    }
+
+    /// Instead of quality setting, use a specific quantization table for color
+    /// with control over 8-bit clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, table values are clamped to 1-255.
+    /// When `false`, values can go up to 32767.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_add_quant_table()`.
+    pub fn set_chroma_qtable_force_8bit(&mut self, qtable: &QTable, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_add_quant_table(&mut self.cinfo, 1, qtable.as_ptr(), 100, boolean::from(force_8bit_quantization) as c_int);
         }
     }
 
