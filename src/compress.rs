@@ -188,7 +188,16 @@ impl<W> CompressStarted<W> {
 }
 
 impl Compress {
-    /// Expose components for modification, e.g. to set chroma subsampling
+    /// Expose components for modification, e.g. to set chroma subsampling.
+    ///
+    /// **Warning:** All per-component fields (sampling factors, quantization table
+    /// assignments, Huffman table assignments) are reset to colorspace defaults by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode),
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults), and
+    /// [`set_color_space()`](Self::set_color_space).
+    /// For example, 4:2:2 subsampling will silently revert to 4:2:0.
+    /// Call those methods *before* modifying components.
+    /// The same applies to [`set_chroma_sampling_pixel_sizes()`](Self::set_chroma_sampling_pixel_sizes).
     pub fn components_mut(&mut self) -> &mut [CompInfo] {
         if self.cinfo.comp_info.is_null() {
             return &mut [];
@@ -319,9 +328,12 @@ impl<W> CompressStarted<W> {
 }
 
 impl Compress {
-    /// Set color space of JPEG being written, different from input color space
+    /// Set color space of JPEG being written, different from input color space.
     ///
-    /// See `jpeg_set_colorspace` in libjpeg docs
+    /// **Warning:** This resets all per-component settings to colorspace defaults:
+    /// sampling factors, quantization table assignments, and Huffman table assignments.
+    /// Set chroma subsampling via [`components_mut()`](Self::components_mut) or
+    /// [`set_chroma_sampling_pixel_sizes()`](Self::set_chroma_sampling_pixel_sizes) *after* this call.
     pub fn set_color_space(&mut self, color_space: ColorSpace) {
         unsafe {
             ffi::jpeg_set_colorspace(&mut self.cinfo, color_space);
@@ -346,6 +358,10 @@ impl Compress {
     ///
     /// [^note]: This method is not related to EXIF-based intrinsic image sizing,
     /// and does not affect rendering in browsers.
+    ///
+    /// **Warning:** Reset to defaults by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults). Call those methods first.
     pub fn set_pixel_density(&mut self, density: PixelDensity) {
         self.cinfo.density_unit = density.unit as u8;
         self.cinfo.X_density = density.x;
@@ -353,6 +369,11 @@ impl Compress {
     }
 
     /// If true, it will use MozJPEG's scan optimization. Makes progressive image files smaller.
+    ///
+    /// **Warning:** Reset by both
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) (→ `true`) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) (→ `false`).
+    /// Call those methods first.
     pub fn set_optimize_scans(&mut self, opt: bool) {
         unsafe {
             ffi::jpeg_c_set_bool_param(&mut self.cinfo, J_BOOLEAN_PARAM::JBOOLEAN_OPTIMIZE_SCANS, boolean::from(opt));
@@ -363,24 +384,42 @@ impl Compress {
     }
 
     /// If 1-100 (non-zero), it will use MozJPEG's smoothing.
+    ///
+    /// **Warning:** This value is silently reset to 0 by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) due to the internal
+    /// `jpeg_set_defaults()` call. Call those methods *before* this one.
     pub fn set_smoothing_factor(&mut self, smoothing_factor: u8) {
         self.cinfo.smoothing_factor = c_int::from(smoothing_factor);
     }
 
-    /// Set to `false` to make files larger for no reason
+    /// Set to `false` to make files larger for no reason.
+    ///
+    /// **Warning:** Reset by both
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) (→ `true`) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) (→ `false`).
+    /// Call those methods first.
     pub fn set_optimize_coding(&mut self, opt: bool) {
         self.cinfo.optimize_coding = boolean::from(opt);
     }
 
     /// Specifies whether multiple scans should be considered during trellis
     /// quantization.
+    ///
+    /// **Warning:** Reset to `false` by both
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults). Call those methods first.
     pub fn set_use_scans_in_trellis(&mut self, opt: bool) {
         unsafe {
             ffi::jpeg_c_set_bool_param(&mut self.cinfo, J_BOOLEAN_PARAM::JBOOLEAN_USE_SCANS_IN_TRELLIS, boolean::from(opt));
         }
     }
 
-    /// You can only turn it on
+    /// You can only turn it on.
+    ///
+    /// **Warning:** Reset by [`set_fastest_defaults()`](Self::set_fastest_defaults).
+    /// Call that method first.
+    /// Not affected by [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode).
     pub fn set_progressive_mode(&mut self) {
         unsafe {
             ffi::jpeg_simple_progression(&mut self.cinfo);
@@ -388,6 +427,26 @@ impl Compress {
     }
 
     /// One scan for all components looks best. Other options may flash grayscale or green images.
+    ///
+    /// # Warning: resets other settings
+    ///
+    /// Internally calls `jpeg_set_defaults()`, which resets the following to their defaults:
+    ///
+    /// - [`set_raw_data_in()`](Self::set_raw_data_in) → `false`
+    /// - [`set_optimize_coding()`](Self::set_optimize_coding) → `true` (forced by mozjpeg profile)
+    /// - [`set_smoothing_factor()`](Self::set_smoothing_factor) → `0`
+    /// - [`set_pixel_density()`](Self::set_pixel_density) → lost (unit=0, 1×1)
+    /// - [`set_quality()`](Self::set_quality), [`set_luma_qtable()`](Self::set_luma_qtable),
+    ///   [`set_chroma_qtable()`](Self::set_chroma_qtable) → overwritten with quality-75 tables
+    /// - [`components_mut()`](Self::components_mut) — sampling factors, quantization table
+    ///   assignments, and Huffman table assignments all revert to colorspace defaults
+    ///   (e.g., 4:2:2 reverts to 4:2:0).
+    ///   Also affects [`set_chroma_sampling_pixel_sizes()`](Self::set_chroma_sampling_pixel_sizes).
+    /// - [`set_optimize_scans()`](Self::set_optimize_scans) → `true` (forced by mozjpeg profile)
+    /// - [`set_use_scans_in_trellis()`](Self::set_use_scans_in_trellis) → `false`
+    ///
+    /// **Call this method before** any of the above, or their values will be silently lost.
+    /// See also [`set_fastest_defaults()`](Self::set_fastest_defaults), which resets even more.
     pub fn set_scan_optimization_mode(&mut self, mode: ScanMode) {
         unsafe {
             ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_DC_SCAN_OPT_MODE, mode as c_int);
@@ -395,9 +454,31 @@ impl Compress {
         }
     }
 
-    /// Reset to libjpeg v6 settings
+    /// Reset to libjpeg v6 settings.
     ///
-    /// It gives files identical with libjpeg-turbo
+    /// It gives files identical with libjpeg-turbo.
+    ///
+    /// # Warning: resets other settings
+    ///
+    /// Internally calls `jpeg_set_defaults()` with JCP_FASTEST profile.
+    /// Resets everything that
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) resets, plus more:
+    ///
+    /// - [`set_raw_data_in()`](Self::set_raw_data_in) → `false`
+    /// - [`set_optimize_coding()`](Self::set_optimize_coding) → `false`
+    /// - [`set_smoothing_factor()`](Self::set_smoothing_factor) → `0`
+    /// - [`set_pixel_density()`](Self::set_pixel_density) → lost (unit=0, 1×1)
+    /// - [`set_quality()`](Self::set_quality), [`set_luma_qtable()`](Self::set_luma_qtable),
+    ///   [`set_chroma_qtable()`](Self::set_chroma_qtable) → overwritten with quality-75 tables
+    /// - [`components_mut()`](Self::components_mut) — sampling factors, quantization table
+    ///   assignments, and Huffman table assignments all revert to colorspace defaults
+    ///   (e.g., 4:2:2 reverts to 4:2:0).
+    ///   Also affects [`set_chroma_sampling_pixel_sizes()`](Self::set_chroma_sampling_pixel_sizes).
+    /// - [`set_progressive_mode()`](Self::set_progressive_mode) → lost (scan info cleared)
+    /// - [`set_optimize_scans()`](Self::set_optimize_scans) → `false`
+    /// - [`set_use_scans_in_trellis()`](Self::set_use_scans_in_trellis) → `false`
+    ///
+    /// **Call this method before** any of the above, or their values will be silently lost.
     pub fn set_fastest_defaults(&mut self) {
         unsafe {
             ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_COMPRESS_PROFILE, ffi::JINT_COMPRESS_PROFILE_VALUE::JCP_FASTEST as c_int);
@@ -405,26 +486,50 @@ impl Compress {
         }
     }
 
-    /// Advanced. See `raw_data_in` in libjpeg docs.
+    /// Enable raw data mode for writing pre-downsampled YCbCr blocks
+    /// via [`write_raw_data()`](CompressStarted::write_raw_data) instead of scanlines.
+    ///
+    /// **Warning:** Reset to `false` by both
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults). Call those methods first.
     pub fn set_raw_data_in(&mut self, opt: bool) {
         self.cinfo.raw_data_in = boolean::from(opt);
     }
 
     /// Set image quality. Values 60-80 are recommended.
+    ///
+    /// **Warning:** Quantization tables are overwritten by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) (reset to quality 75).
+    /// Call those methods first.
     pub fn set_quality(&mut self, quality: f32) {
         unsafe {
             ffi::jpeg_set_quality(&mut self.cinfo, quality as c_int, boolean::from(false));
         }
     }
 
-    /// Instead of quality setting, use a specific quantization table.
+    /// Instead of quality setting, use a specific quantization table for luminance.
+    ///
+    /// Writes to quantization table slot 0 (the default luma slot).
+    ///
+    /// **Warning:** Table contents are overwritten by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) (reset to quality 75).
+    /// Call those methods first.
     pub fn set_luma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 0, qtable.as_ptr(), 100, 1);
         }
     }
 
-    /// Instead of quality setting, use a specific quantization table for color.
+    /// Instead of quality setting, use a specific quantization table for chrominance.
+    ///
+    /// Writes to quantization table slot 1 (the default chroma slot).
+    ///
+    /// **Warning:** Table contents are overwritten by
+    /// [`set_scan_optimization_mode()`](Self::set_scan_optimization_mode) and
+    /// [`set_fastest_defaults()`](Self::set_fastest_defaults) (reset to quality 75).
+    /// Call those methods first.
     pub fn set_chroma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 1, qtable.as_ptr(), 100, 1);
