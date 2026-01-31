@@ -411,23 +411,79 @@ impl Compress {
     }
 
     /// Set image quality. Values 60-80 are recommended.
+    ///
+    /// Quantization table values are not clamped to the 8-bit range, so at low
+    /// quality settings (below ~50) some values may exceed 255 and produce
+    /// 16-bit DQT markers.
+    ///
+    /// Use [`set_quality_force_8bit`](Self::set_quality_force_8bit) to control
+    /// whether values are clamped to 1-255.
     pub fn set_quality(&mut self, quality: f32) {
         unsafe {
             ffi::jpeg_set_quality(&mut self.cinfo, quality as c_int, boolean::from(false));
         }
     }
 
+    /// Set image quality with control over 8-bit quantization table clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, quantization table values are
+    /// clamped to 1-255 (8-bit DQT precision). When `false`, values can go up to
+    /// 32767 (16-bit DQT precision).
+    ///
+    /// This only affects quantization table value range. It does NOT disable
+    /// progressive encoding, change the SOF marker type, or affect any other
+    /// encoding parameters.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_set_quality()`.
+    pub fn set_quality_force_8bit(&mut self, quality: f32, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_set_quality(&mut self.cinfo, quality as c_int, boolean::from(force_8bit_quantization));
+        }
+    }
+
     /// Instead of quality setting, use a specific quantization table.
+    ///
+    /// Table values are clamped to 1-255 (8-bit DQT precision).
+    /// Use [`set_luma_qtable_force_8bit`](Self::set_luma_qtable_force_8bit) for explicit control.
     pub fn set_luma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 0, qtable.as_ptr(), 100, 1);
         }
     }
 
+    /// Instead of quality setting, use a specific quantization table with
+    /// control over 8-bit clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, table values are clamped to 1-255.
+    /// When `false`, values can go up to 32767.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_add_quant_table()`.
+    pub fn set_luma_qtable_force_8bit(&mut self, qtable: &QTable, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_add_quant_table(&mut self.cinfo, 0, qtable.as_ptr(), 100, boolean::from(force_8bit_quantization) as c_int);
+        }
+    }
+
     /// Instead of quality setting, use a specific quantization table for color.
+    ///
+    /// Table values are clamped to 1-255 (8-bit DQT precision).
+    /// Use [`set_chroma_qtable_force_8bit`](Self::set_chroma_qtable_force_8bit) for explicit control.
     pub fn set_chroma_qtable(&mut self, qtable: &QTable) {
         unsafe {
             ffi::jpeg_add_quant_table(&mut self.cinfo, 1, qtable.as_ptr(), 100, 1);
+        }
+    }
+
+    /// Instead of quality setting, use a specific quantization table for color
+    /// with control over 8-bit clamping.
+    ///
+    /// When `force_8bit_quantization` is `true`, table values are clamped to 1-255.
+    /// When `false`, values can go up to 32767.
+    ///
+    /// Corresponds to the `force_baseline` parameter in libjpeg's `jpeg_add_quant_table()`.
+    pub fn set_chroma_qtable_force_8bit(&mut self, qtable: &QTable, force_8bit_quantization: bool) {
+        unsafe {
+            ffi::jpeg_add_quant_table(&mut self.cinfo, 1, qtable.as_ptr(), 100, boolean::from(force_8bit_quantization) as c_int);
         }
     }
 
