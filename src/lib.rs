@@ -94,10 +94,13 @@ fn recompress() {
         cinfo.set_luma_qtable(&qtable::AnnexK_Luma.scaled(99. * scale.0, 90. * scale.1));
         cinfo.set_chroma_qtable(&qtable::AnnexK_Chroma.scaled(100. * scale.0, 60. * scale.1));
 
-        for (c, samp) in cinfo.components_mut().iter_mut().zip(samp_factors) {
-            c.v_samp_factor = *samp;
-            c.h_samp_factor = *samp;
-        }
+        let samp_factors = samp_factors.to_vec();
+        cinfo.mutate_components_last(move |components| {
+            for (c, samp) in components.iter_mut().zip(&samp_factors) {
+                c.v_samp_factor = *samp;
+                c.h_samp_factor = *samp;
+            }
+        });
 
         let mut cinfo = cinfo.start_compress(Vec::new()).unwrap();
 

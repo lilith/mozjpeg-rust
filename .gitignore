@@ -4,3 +4,13 @@ Cargo.lock
 target/
 testout-r1.jpg
 testout-r2.jpg
+
+# Analysis files
+API_FIX_OPTIONS.md
+COMBINATORIAL_TEST_RESULTS.md
+C_SOURCE_ANALYSIS.md
+ISSUE_DRAFT.md
+LAZY_CONFIG_DESIGN.md
+ORDERING_BUGS.md
+ROOT_CAUSE_ANALYSIS.md
+TEST_SUMMARY.md

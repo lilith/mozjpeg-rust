@@ -124,8 +124,7 @@ fn encode_subsampled_jpeg((width, height, data): (usize, usize, Vec<[u8; 3]>)) -
     encoder.set_size(width, height);
 
     encoder.set_color_space(mozjpeg::ColorSpace::JCS_YCbCr);
-    {
-        let comp = encoder.components_mut();
+    encoder.mutate_components_last(|comp| {
         comp[0].h_samp_factor = 1;
         comp[0].v_samp_factor = 1;
 
@@ -135,7 +134,7 @@ fn encode_subsampled_jpeg((width, height, data): (usize, usize, Vec<[u8; 3]>)) -
         comp[1].v_samp_factor = v;
         comp[2].h_samp_factor = h;
         comp[2].v_samp_factor = v;
-    }
+    });
 
     let mut encoder = encoder.start_compress(Vec::new()).unwrap();
     let _ = encoder.write_scanlines(bytemuck::cast_slice(&data));
