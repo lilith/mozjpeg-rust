@@ -3,9 +3,11 @@ use mozjpeg::*;
 pub fn decompress_jpeg(jpeg: &[u8]) -> Vec<Vec<u8>> {
     let decomp = mozjpeg::Decompress::new_mem(jpeg).unwrap();
 
-    let mut bitmaps:Vec<_> = decomp.components().iter().map(|c|{
-        Vec::with_capacity(c.row_stride() * c.col_stride())
-    }).collect();
+    let mut bitmaps: Vec<_> = decomp
+        .components()
+        .iter()
+        .map(|c| Vec::with_capacity(c.row_stride() * c.col_stride()))
+        .collect();
 
     let mut decomp = decomp.raw().unwrap();
     {
@@ -155,7 +157,11 @@ fn encode_jpeg_with_icc_profile((width, height, data): (usize, usize, Vec<[u8; 3
 }
 
 fn decode_jpeg(buffer: &[u8]) -> (usize, usize, Vec<[u8; 3]>) {
-    let mut decoder = match mozjpeg::Decompress::new_mem(buffer).unwrap().image().unwrap() {
+    let mut decoder = match mozjpeg::Decompress::new_mem(buffer)
+        .unwrap()
+        .image()
+        .unwrap()
+    {
         mozjpeg::decompress::Format::RGB(d) => d,
         _ => unimplemented!(),
     };

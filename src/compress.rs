@@ -1,4 +1,3 @@
-use crate::{colorspace::ColorSpace, PixelDensity};
 use crate::colorspace::ColorSpaceExt;
 use crate::component::CompInfo;
 use crate::component::CompInfoExt;
@@ -16,6 +15,7 @@ use crate::ffi::J_INT_PARAM;
 use crate::marker::Marker;
 use crate::qtable::QTable;
 use crate::writedst::DestinationMgr;
+use crate::{colorspace::ColorSpace, PixelDensity};
 use arrayvec::ArrayVec;
 use std::cmp::min;
 use std::io;
@@ -100,8 +100,7 @@ impl Compress {
 
     #[doc(hidden)]
     #[deprecated(note = "Give a Vec to start_compress instead")]
-    pub fn set_mem_dest(&self) {
-    }
+    pub fn set_mem_dest(&self) {}
 
     /// Settings can't be changed after this call. Returns a `CompressStarted` struct that will handle the rest of the writing.
     ///
@@ -109,11 +108,22 @@ impl Compress {
     ///
     /// It may panic, like all functions of this library.
     pub fn start_compress<W: io::Write>(self, writer: W) -> io::Result<CompressStarted<W>> {
-        if !self.components().iter().any(|c| c.h_samp_factor == 1) { return Err(io::Error::new(io::ErrorKind::InvalidInput, "at least one h_samp_factor must be 1")); }
-        if !self.components().iter().any(|c| c.v_samp_factor == 1) { return Err(io::Error::new(io::ErrorKind::InvalidInput, "at least one v_samp_factor must be 1")); }
+        if !self.components().iter().any(|c| c.h_samp_factor == 1) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "at least one h_samp_factor must be 1",
+            ));
+        }
+        if !self.components().iter().any(|c| c.v_samp_factor == 1) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "at least one v_samp_factor must be 1",
+            ));
+        }
 
         // 1bpp, rounded to 4K page
-        let expected_file_size = (self.cinfo.image_width as usize * self.cinfo.image_height as usize / 8 + 4095) & !4095;
+        let expected_file_size =
+            (self.cinfo.image_width as usize * self.cinfo.image_height as usize / 8 + 4095) & !4095;
         let write_buffer_capacity = expected_file_size.clamp(1 << 12, 1 << 16);
 
         let mut started = CompressStarted {
@@ -204,9 +214,7 @@ impl Compress {
         if self.cinfo.comp_info.is_null() {
             return &[];
         }
-        unsafe {
-            slice::from_raw_parts(self.cinfo.comp_info, self.cinfo.num_components as usize)
-        }
+        unsafe { slice::from_raw_parts(self.cinfo.comp_info, self.cinfo.num_components as usize) }
     }
 }
 
@@ -217,13 +225,15 @@ impl<W> CompressStarted<W> {
     ///
     /// It may panic, like all functions of this library.
     pub fn write_scanlines(&mut self, image_src: &[u8]) -> io::Result<()> {
-        if self.compress.cinfo.raw_data_in != 0 ||
-            self.compress.cinfo.input_components <= 0 ||
-            self.compress.cinfo.image_width == 0 {
+        if self.compress.cinfo.raw_data_in != 0
+            || self.compress.cinfo.input_components <= 0
+            || self.compress.cinfo.image_width == 0
+        {
             return Err(io::ErrorKind::InvalidInput.into());
         }
 
-        let byte_width = self.compress.cinfo.image_width as usize * self.compress.cinfo.input_components as usize;
+        let byte_width = self.compress.cinfo.image_width as usize
+            * self.compress.cinfo.input_components as usize;
         for rows in image_src.chunks(MAX_MCU_HEIGHT * byte_width) {
             let mut row_pointers = ArrayVec::<_, MAX_MCU_HEIGHT>::new();
             for row in rows.chunks_exact(byte_width) {
@@ -273,12 +283,21 @@ impl<W> CompressStarted<W> {
 
         let num_components = self.components().len();
         if num_components > MAX_COMPONENTS || num_components > image_src.len() {
-            panic!("Too many components: declared {}, got {}", num_components, image_src.len());
+            panic!(
+                "Too many components: declared {}, got {}",
+                num_components,
+                image_src.len()
+            );
         }
 
         for (ci, comp_info) in self.components().iter().enumerate() {
             if comp_info.row_stride() * comp_info.col_stride() > image_src[ci].len() {
-                panic!("Bitmap too small. Expected {}x{}, got {}", comp_info.row_stride(), comp_info.col_stride(), image_src[ci].len());
+                panic!(
+                    "Bitmap too small. Expected {}x{}, got {}",
+                    comp_info.row_stride(),
+                    comp_info.col_stride(),
+                    image_src[ci].len()
+                );
             }
         }
 
@@ -287,7 +306,12 @@ impl<W> CompressStarted<W> {
             unsafe {
                 let mut row_ptrs = [[ptr::null::<u8>(); MAX_MCU_HEIGHT]; MAX_COMPONENTS];
 
-                for ((comp_info, &image_src), comp_row_ptrs) in self.components().iter().zip(image_src).zip(row_ptrs.iter_mut()) {
+                for ((comp_info, &image_src), comp_row_ptrs) in self
+                    .components()
+                    .iter()
+                    .zip(image_src)
+                    .zip(row_ptrs.iter_mut())
+                {
                     let row_stride = comp_info.row_stride();
 
                     let input_height = image_src.len() / row_stride;
@@ -301,13 +325,23 @@ impl<W> CompressStarted<W> {
                     assert!(comp_height >= 8);
 
                     // row_ptrs were initialized to null
-                    for (src_row, row_ptr) in image_src.chunks_exact(row_stride).skip(comp_start_row).take(comp_height).zip(comp_row_ptrs.iter_mut()) {
+                    for (src_row, row_ptr) in image_src
+                        .chunks_exact(row_stride)
+                        .skip(comp_start_row)
+                        .take(comp_height)
+                        .zip(comp_row_ptrs.iter_mut())
+                    {
                         *row_ptr = src_row.as_ptr();
                     }
                 }
 
-                let comp_ptrs: [*const *const u8; MAX_COMPONENTS] = std::array::from_fn(|ci| row_ptrs[ci].as_ptr());
-                let rows_written = ffi::jpeg_write_raw_data(&mut self.compress.cinfo, comp_ptrs.as_ptr(), mcu_height as u32) as usize;
+                let comp_ptrs: [*const *const u8; MAX_COMPONENTS] =
+                    std::array::from_fn(|ci| row_ptrs[ci].as_ptr());
+                let rows_written = ffi::jpeg_write_raw_data(
+                    &mut self.compress.cinfo,
+                    comp_ptrs.as_ptr(),
+                    mcu_height as u32,
+                ) as usize;
                 if 0 == rows_written {
                     return false;
                 }
@@ -355,7 +389,11 @@ impl Compress {
     /// If true, it will use MozJPEG's scan optimization. Makes progressive image files smaller.
     pub fn set_optimize_scans(&mut self, opt: bool) {
         unsafe {
-            ffi::jpeg_c_set_bool_param(&mut self.cinfo, J_BOOLEAN_PARAM::JBOOLEAN_OPTIMIZE_SCANS, boolean::from(opt));
+            ffi::jpeg_c_set_bool_param(
+                &mut self.cinfo,
+                J_BOOLEAN_PARAM::JBOOLEAN_OPTIMIZE_SCANS,
+                boolean::from(opt),
+            );
         }
         if !opt {
             self.cinfo.scan_info = ptr::null();
@@ -376,7 +414,11 @@ impl Compress {
     /// quantization.
     pub fn set_use_scans_in_trellis(&mut self, opt: bool) {
         unsafe {
-            ffi::jpeg_c_set_bool_param(&mut self.cinfo, J_BOOLEAN_PARAM::JBOOLEAN_USE_SCANS_IN_TRELLIS, boolean::from(opt));
+            ffi::jpeg_c_set_bool_param(
+                &mut self.cinfo,
+                J_BOOLEAN_PARAM::JBOOLEAN_USE_SCANS_IN_TRELLIS,
+                boolean::from(opt),
+            );
         }
     }
 
@@ -390,7 +432,11 @@ impl Compress {
     /// One scan for all components looks best. Other options may flash grayscale or green images.
     pub fn set_scan_optimization_mode(&mut self, mode: ScanMode) {
         unsafe {
-            ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_DC_SCAN_OPT_MODE, mode as c_int);
+            ffi::jpeg_c_set_int_param(
+                &mut self.cinfo,
+                J_INT_PARAM::JINT_DC_SCAN_OPT_MODE,
+                mode as c_int,
+            );
             ffi::jpeg_set_defaults(&mut self.cinfo);
         }
     }
@@ -400,7 +446,11 @@ impl Compress {
     /// It gives files identical with libjpeg-turbo
     pub fn set_fastest_defaults(&mut self) {
         unsafe {
-            ffi::jpeg_c_set_int_param(&mut self.cinfo, J_INT_PARAM::JINT_COMPRESS_PROFILE, ffi::JINT_COMPRESS_PROFILE_VALUE::JCP_FASTEST as c_int);
+            ffi::jpeg_c_set_int_param(
+                &mut self.cinfo,
+                J_INT_PARAM::JINT_COMPRESS_PROFILE,
+                ffi::JINT_COMPRESS_PROFILE_VALUE::JCP_FASTEST as c_int,
+            );
             ffi::jpeg_set_defaults(&mut self.cinfo);
         }
     }
@@ -501,7 +551,8 @@ fn write_mem() {
 
     cinfo.set_size(17, 33);
 
-    #[allow(deprecated)] {
+    #[allow(deprecated)]
+    {
         cinfo.set_gamma(1.0);
     }
 
@@ -557,7 +608,7 @@ fn convert_colorspace() {
 
     let mut cinfo = cinfo.start_compress(Vec::new()).unwrap();
 
-    let scanlines = vec![127u8; 33*15*3];
+    let scanlines = vec![127u8; 33 * 15 * 3];
     cinfo.write_scanlines(&scanlines).unwrap();
 
     let res = cinfo.finish().unwrap();

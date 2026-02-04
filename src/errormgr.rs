@@ -26,7 +26,11 @@ fn formatted_message(prefix: &str, cinfo: &mut jpeg_common_struct) -> String {
                 let mut buffer = mem::zeroed();
                 let correct_fn_type = mem::transmute::<
                     unsafe extern "C-unwind" fn(cinfo: &mut jpeg_common_struct, buffer: &[u8; 80]),
-                    unsafe extern "C-unwind" fn(cinfo: &mut jpeg_common_struct, buffer: &mut [u8; 80])>(fmt);
+                    unsafe extern "C-unwind" fn(
+                        cinfo: &mut jpeg_common_struct,
+                        buffer: &mut [u8; 80],
+                    ),
+                >(fmt);
                 (correct_fn_type)(cinfo, &mut buffer);
                 let buf = buffer.split(|&c| c == 0).next().unwrap_or_default();
                 let msg = String::from_utf8_lossy(buf);
@@ -34,7 +38,7 @@ fn formatted_message(prefix: &str, cinfo: &mut jpeg_common_struct) -> String {
                 push_str_in_cap(&mut out, prefix);
                 push_str_in_cap(&mut out, &msg);
                 out
-            },
+            }
             None => format!("{}code {}", prefix, err.msg_code),
         }
     }
@@ -48,8 +52,7 @@ fn push_str_in_cap(out: &mut String, s: &str) {
 }
 
 #[cold]
-extern "C-unwind" fn silence_message(_cinfo: &mut jpeg_common_struct, _level: c_int) {
-}
+extern "C-unwind" fn silence_message(_cinfo: &mut jpeg_common_struct, _level: c_int) {}
 
 #[cold]
 extern "C-unwind" fn unwind_error_exit(cinfo: &mut jpeg_common_struct) {

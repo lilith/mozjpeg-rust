@@ -22,17 +22,18 @@ impl fmt::Debug for QTable {
     }
 }
 
-const low_weights : [f32; 19] = [
-    1.00, 0.85, 0.55, 0., 0., 0., 0., 0.,
-    0.85, 0.75, 0.10, 0., 0., 0., 0., 0.,
-    0.55, 0.10, 0.05,
+const low_weights: [f32; 19] = [
+    1.00, 0.85, 0.55, 0., 0., 0., 0., 0., 0.85, 0.75, 0.10, 0., 0., 0., 0., 0., 0.55, 0.10, 0.05,
 ];
 
 impl QTable {
     #[must_use]
     pub fn compare(&self, other: &Self) -> (f32, f32) {
         let mut scales = [0.; 64];
-        for (s, (&a, &b)) in scales.iter_mut().zip(self.coeffs.iter().zip(other.coeffs.iter())) {
+        for (s, (&a, &b)) in scales
+            .iter_mut()
+            .zip(self.coeffs.iter().zip(other.coeffs.iter()))
+        {
             *s = if b > 0 { a as f32 / b as f32 } else { 0. };
         }
         let avg = scales.iter().sum::<f32>() / 64.;
@@ -55,7 +56,8 @@ impl QTable {
 
             // TODO: that could be improved for 1x2 and 2x1 subsampling
             for ((out, coef), w) in low_out.iter_mut().zip(low_coefs).zip(&low_weights) {
-                *out = ((*coef as f32 * (dc_scaling * w + ac_scaling * (1.-w))).round() as Coef).clamp(1, 255);
+                *out = ((*coef as f32 * (dc_scaling * w + ac_scaling * (1. - w))).round() as Coef)
+                    .clamp(1, 255);
             }
             for (out, coef) in high_out.iter_mut().zip(high_coefs) {
                 *out = ((*coef as f32 * ac_scaling).round() as Coef).clamp(1, 255);
@@ -207,20 +209,24 @@ fn scaling() {
     assert_eq!(QTable { coeffs: [100; 64] }, QTable { coeffs: [100; 64] });
     assert!(QTable { coeffs: [1; 64] } != QTable { coeffs: [2; 64] });
 
-    assert_eq!(QTable{coeffs:[36; 64]}, Flat.scaled(22.,22.));
-    assert_eq!(QTable{coeffs:[8; 64]}, Flat.scaled(75.,75.));
-    assert_eq!(QTable{coeffs:[1; 64]}, Flat.scaled(100.,100.));
-    assert_eq!(QTable{coeffs:[2; 64]}, Flat.scaled(95.,95.));
-    assert_eq!(QTable{coeffs:[
-         2,  6, 15, 32, 32, 32, 32, 32,
-         6,  9, 29, 32, 32, 32, 32, 32,
-        15, 29, 30, 32, 32, 32, 32, 32,
-        32, 32, 32, 32, 32, 32, 32, 32,
-        32, 32, 32, 32, 32, 32, 32, 32,
-        32, 32, 32, 32, 32, 32, 32, 32,
-        32, 32, 32, 32, 32, 32, 32, 32,
-        32, 32, 32, 32, 32, 32, 32, 32]}, Flat.scaled(95.,25.));
-    assert_eq!(PetersonAhumadaWatson, PetersonAhumadaWatson.scaled(50.,50.));
+    assert_eq!(QTable { coeffs: [36; 64] }, Flat.scaled(22., 22.));
+    assert_eq!(QTable { coeffs: [8; 64] }, Flat.scaled(75., 75.));
+    assert_eq!(QTable { coeffs: [1; 64] }, Flat.scaled(100., 100.));
+    assert_eq!(QTable { coeffs: [2; 64] }, Flat.scaled(95., 95.));
+    assert_eq!(
+        QTable {
+            coeffs: [
+                2, 6, 15, 32, 32, 32, 32, 32, 6, 9, 29, 32, 32, 32, 32, 32, 15, 29, 30, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32
+            ]
+        },
+        Flat.scaled(95., 25.)
+    );
+    assert_eq!(
+        PetersonAhumadaWatson,
+        PetersonAhumadaWatson.scaled(50., 50.)
+    );
 
     assert_eq!(QTable { coeffs: [1; 64] }, NRobidoux.scaled(99.9, 99.9));
     assert_eq!(QTable { coeffs: [1; 64] }, MSSSIM_Chroma.scaled(99.8, 99.8));
